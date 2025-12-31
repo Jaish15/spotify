@@ -1,4 +1,4 @@
-const clientId = "YOUR_CLIENT_ID_HERE";
+const clientId = "cf029882ccdf4dee8eac2cd71a703976";
 const redirectUri = window.location.href.split("?")[0];
 
 const scopes = "user-read-private";
