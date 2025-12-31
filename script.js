@@ -1,67 +1,87 @@
-const clientId = "YOUR_CLIENT_ID_HERE";
-const redirectUri = window.location.href.split("?")[0];
+const canvas = document.getElementById("visualizer");
+const ctx = canvas.getContext("2d");
 
-const scopes = "user-read-private";
+const audio = document.getElementById("player");
+const analyser = new (window.AudioContext || window.webkitAudioContext)().createAnalyser();
+const source = new (window.AudioContext || window.webkitAudioContext)().createMediaElementSource(audio);
 
-function login() {
-  const authUrl =
-    `https://accounts.spotify.com/authorize?` +
-    `client_id=${clientId}` +
-    `&response_type=token` +
-    `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-    `&scope=${scopes}`;
+source.connect(analyser);
+analyser.connect(source.context.destination);
 
-  window.location.href = authUrl;
+analyser.fftSize = 256;
+const bufferLength = analyser.frequencyBinCount;
+const dataArray = new Uint8Array(bufferLength);
+
+const moodText = document.getElementById("mood");
+const analyzing = document.getElementById("analyzing");
+const songList = document.getElementById("songList");
+
+const songs = {
+  Love: [{ name: "Uyirey", file: "songs/Uyirey.mp3" }],
+  Sad: [{ name: "Po Nee Po", file: "songs/Po Nee Po (The Pain of Love).mp3" }],
+  Folk: [{ name: "Chikitu", file: "songs/Chikitu.mp3" }]
+};
+
+function analyzeMood() {
+  const file = document.getElementById("fileInput").files[0];
+  if (!file) return;
+
+  analyzing.style.display = "block";
+  moodText.style.display = "none";
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    const audioCtx = new AudioContext();
+    audioCtx.decodeAudioData(reader.result, buffer => {
+      const energy = buffer.getChannelData(0).reduce((a, b) => a + Math.abs(b), 0) / buffer.length;
+      const mood = energy < 0.1 ? "Sad" : buffer.duration > 180 ? "Folk" : "Love";
+
+      setTimeout(() => showMood(mood), 1200);
+    });
+  };
+  reader.readAsArrayBuffer(file);
 }
 
-// Extract token
-const hash = window.location.hash;
-let token = null;
+function showMood(mood) {
+  analyzing.style.display = "none";
+  moodText.style.display = "block";
+  moodText.innerText =
+    mood === "Love" ? "❤️ Love" :
+    mood === "Sad" ? "😔 Sad" : "🌾 Folk";
 
-if (hash) {
-  const params = new URLSearchParams(hash.substring(1));
-  token = params.get("access_token");
+  loadSongs(mood);
 }
 
-// Mood → Spotify query
-function getMoodQuery(mood) {
-  if (mood === "happy") return "happy pop";
-  if (mood === "sad") return "sad acoustic";
-  if (mood === "calm") return "lofi chill";
-}
+function loadSongs(mood) {
+  songList.innerHTML = "";
+  songs[mood].forEach(song => {
+    const div = document.createElement("div");
+    div.className = "song";
+    div.innerText = "▶ " + song.name;
 
-async function getSongs(mood) {
-  if (!token) {
-    alert("Please login with Spotify first!");
-    return;
-  }
+    div.onclick = () => {
+      document.querySelectorAll(".song").forEach(s => s.classList.remove("active"));
+      div.classList.add("active");
+      audio.src = song.file;
+      audio.play();
+      animate();
+    };
 
-  const query = getMoodQuery(mood);
-
-  const res = await fetch(
-    `https://api.spotify.com/v1/search?q=${query}&type=track&limit=6`,
-    {
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
-    }
-  );
-
-  const data = await res.json();
-  const container = document.getElementById("songs");
-  container.innerHTML = "";
-
-  data.tracks.items.forEach(track => {
-    container.innerHTML += `
-      <div class="song">
-        <strong>${track.name}</strong><br>
-        ${track.artists[0].name}<br>
-        ${
-          track.preview_url
-            ? `<audio controls src="${track.preview_url}"></audio>`
-            : "<p>No preview available</p>"
-        }
-      </div>
-    `;
+    songList.appendChild(div);
   });
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  analyser.getByteFrequencyData(dataArray);
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  let x = 0;
+  for (let i = 0; i < bufferLength; i++) {
+    const bar = dataArray[i];
+    ctx.fillStyle = `rgb(${bar + 100},80,255)`;
+    ctx.fillRect(x, canvas.height - bar, 4, bar);
+    x += 6;
+  }
 }
